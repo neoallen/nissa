@@ -645,6 +645,9 @@ def analyze_audio(samples: np.ndarray, sr: int, bph: int, la: float,
     clean_bes = np.array([results[i]['beat_error_ms']
                           for i in range(len(results))
                           if mask[i] and results[i]['beat_error_ms'] is not None])
+    clean_amps = np.array([results[i]['amplitude_deg']
+                           for i in range(len(results))
+                           if mask[i] and results[i]['amplitude_deg'] is not None])
     n_accepted = int(np.sum(mask))
 
     med_period = float(np.median(clean_periods)) if len(clean_periods) else float(np.median(periods))
@@ -653,7 +656,8 @@ def analyze_audio(samples: np.ndarray, sr: int, bph: int, la: float,
     rate_ci_lo, rate_ci_hi = _bootstrap_ci(clean_rates) if len(clean_rates) >= 3 else (None, None)
     avg_be = (float(np.median(clean_bes)) if len(clean_bes)
               else (float(np.median(bes)) if len(bes) else None))
-    avg_amp = float(np.median(amps)) if len(amps) else 0
+    avg_amp = (float(np.median(clean_amps)) if len(clean_amps)
+               else (float(np.median(amps)) if len(amps) else None))
     bph_meas = round(7200 / (med_period / 1000))
 
     chunks_out = []
@@ -687,7 +691,7 @@ def analyze_audio(samples: np.ndarray, sr: int, bph: int, la: float,
                 if rate_ci_lo is not None else None
             ),
             'beat_error_ms': round(avg_be, 2) if avg_be is not None else None,
-            'amplitude_deg': round(avg_amp, 0) if avg_amp > 0 else None,
+            'amplitude_deg': round(avg_amp, 0) if avg_amp is not None else None,
         },
         'chunks': chunks_out,
     }
