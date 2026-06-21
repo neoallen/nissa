@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Watch Timer</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @keyframes pulse-rec {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .recording-dot {
+    animation: pulse-rec 1s ease-in-out infinite;
+  }
+  button, select, input {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+</style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen font-mono">
+<div class="max-w-md mx-auto px-4 py-6">
+
+  <h1 class="text-2xl font-bold text-center mb-6 tracking-wide">Watch Timer</h1>
+
+  <div class="bg-gray-900 rounded-xl p-4 mb-4 space-y-3">
+    <div>
+      <label class="block text-xs text-gray-400 mb-1">BPH (Beats Per Hour)</label>
+      <select id="bph" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm">
+        <option value="0">Auto-detect</option>
+        <option value="12000">12000</option>
+        <option value="14400">14400</option>
+        <option value="17280">17280</option>
+        <option value="18000">18000</option>
+        <option value="19800">19800</option>
+        <option value="21600" selected>21600</option>
+        <option value="25200">25200</option>
+        <option value="28800">28800</option>
+        <option value="36000">36000</option>
+        <option value="43200">43200</option>
+        <option value="72000">72000</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs text-gray-400 mb-1">Lift Angle (&deg;)</label>
+      <input type="number" id="la" value="52.0" step="0.5" min="30" max="70"
+             class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm">
+    </div>
+  </div>
+
+  <div class="text-center mb-4">
+    <button id="recBtn"
+            class="w-32 h-32 rounded-full bg-red-600 hover:bg-red-500 active:scale-95
+                   transition-all duration-150 text-white font-bold text-lg shadow-lg shadow-red-900/40
+                   disabled:opacity-50 disabled:cursor-not-allowed">
+      REC
+    </button>
+    <p id="recStatus" class="text-sm text-gray-400 mt-2 h-5"></p>
+    <p id="recTime" class="text-xs text-gray-500 h-4"></p>
+  </div>
+
+  <div id="progress" class="hidden text-center py-4">
+    <div class="inline-block w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+    <p id="progressText" class="text-sm text-blue-400 mt-2">Analyzing...</p>
+  </div>
+
+  <div id="errorBox" class="hidden bg-red-900/50 border border-red-700 rounded-lg p-3 mb-4 text-sm text-red-300"></div>
+
+  <div id="results" class="hidden bg-gray-900 rounded-xl p-4">
+    <h2 class="text-sm font-bold text-gray-400 mb-3 uppercase tracking-wider">Results</h2>
+    <table class="w-full text-sm">
+      <tbody class="divide-y divide-gray-800">
+        <tr><td class="py-2 text-gray-500">Rate</td><td id="resRate" class="py-2 text-right font-bold text-lg"></td></tr>
+        <tr><td class="py-2 text-gray-500">Period</td><td id="resPeriod" class="py-2 text-right"></td></tr>
+        <tr><td class="py-2 text-gray-500">BPH Measured</td><td id="resBph" class="py-2 text-right"></td></tr>
+        <tr><td class="py-2 text-gray-500">Beat Error</td><td id="resBe" class="py-2 text-right"></td></tr>
+        <tr><td class="py-2 text-gray-500">Amplitude</td><td id="resAmp" class="py-2 text-right"></td></tr>
+      </tbody>
+    </table>
+    <p id="resChunks" class="text-xs text-gray-600 mt-3 text-center"></p>
+  </div>
+
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const bphSelect = $('bph');
+const laInput = $('la');
+const recBtn = $('recBtn');
+const recStatus = $('recStatus');
+const recTime = $('recTime');
+const progress = $('progress');
+const progressText = $('progressText');
+const errorBox = $('errorBox');
+const results = $('results');
+
+let mediaRecorder = null;
+let audioChunks = [];
+let recStart = 0;
+let recTimer = 0;
+let recording = false;
+
+const BPHS = [0, 12000, 14400, 17280, 18000, 19800, 21600, 25200, 28800, 36000, 43200, 72000];
+const MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac'];
+
+function getMimeType() {
+  for (const t of MIME_TYPES) {
+    if (MediaRecorder.isTypeSupported(t)) return t;
+  }
+  return '';
+}
+
+async function startRecording() {
+  audioChunks = [];
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mimeType = getMimeType();
+    mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      if (audioChunks.length > 0) uploadAndAnalyze();
+    };
+    mediaRecorder.start();
+    recording = true;
+    recStart = Date.now();
+    recBtn.textContent = 'STOP';
+    recBtn.classList.add('recording-dot');
+    recStatus.textContent = 'Recording...';
+    updateTimer();
+    recTimer = setInterval(updateTimer, 200);
+  } catch (err) {
+    showError('Microphone access denied. For iPhone: use Safari and allow mic permission.');
+  }
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+  }
+  recording = false;
+  clearInterval(recTimer);
+  recBtn.textContent = 'REC';
+  recBtn.classList.remove('recording-dot');
+  recStatus.textContent = '';
+  recTime.textContent = '';
+}
+
+function updateTimer() {
+  const elapsed = ((Date.now() - recStart) / 1000).toFixed(1);
+  recTime.textContent = elapsed + 's';
+}
+
+recBtn.addEventListener('click', () => {
+  if (recording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+});
+
+async function uploadAndAnalyze() {
+  progress.classList.remove('hidden');
+  progressText.textContent = 'Uploading...';
+  results.classList.add('hidden');
+  errorBox.classList.add('hidden');
+
+  const blob = new Blob(audioChunks);
+  const form = new FormData();
+  form.append('file', blob, 'recording.' + (getMimeType().includes('webm') ? 'webm' : 'mp4'));
+  form.append('bph', bphSelect.value);
+  form.append('la', laInput.value);
+
+  try {
+    const resp = await fetch('/api/analyze', { method: 'POST', body: form });
+    if (!resp.ok) {
+      const errData = await resp.json().catch(() => ({}));
+      throw new Error(errData.detail || `Server error (${resp.status})`);
+    }
+    const data = await resp.json();
+    showResults(data);
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    progress.classList.add('hidden');
+  }
+}
+
+function showResults(data) {
+  const s = data.summary;
+  $('resRate').textContent = (s.rate_sd != null ? (s.rate_sd > 0 ? '+' : '') + s.rate_sd.toFixed(1) : '---') + ' s/d';
+  if (s.rate_ci_95) {
+    $('resRate').textContent += ' (95% CI: ' + (s.rate_ci_95[0] > 0 ? '+' : '') + s.rate_ci_95[0].toFixed(1) + '..' + (s.rate_ci_95[1] > 0 ? '+' : '') + s.rate_ci_95[1].toFixed(1) + ')';
+  }
+  $('resRate').className = 'py-2 text-right font-bold text-lg ' +
+    (s.rate_sd != null ? (Math.abs(s.rate_sd) < 10 ? 'text-green-400' : Math.abs(s.rate_sd) < 30 ? 'text-yellow-400' : 'text-red-400') : '');
+  $('resPeriod').textContent = (s.period_ms != null ? s.period_ms.toFixed(1) + ' ms' : '---');
+  $('resBph').textContent = s.bph_measured != null ? s.bph_measured : '---';
+  $('resBe').textContent = s.beat_error_ms != null ? s.beat_error_ms.toFixed(2) + ' ms' : '---';
+  $('resAmp').textContent = s.amplitude_deg != null ? s.amplitude_deg.toFixed(0) + '\u00B0' : '---';
+  $('resChunks').textContent = s.chunks_accepted + ' / ' + s.chunks_total + ' chunks accepted';
+  results.classList.remove('hidden');
+  results.scrollIntoView({ behavior: 'smooth' });
+}
+
+function showError(msg) {
+  errorBox.textContent = msg;
+  errorBox.classList.remove('hidden');
+  errorBox.scrollIntoView({ behavior: 'smooth' });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Environment secrets
+.env
+
+# Audio test files
+input_example/
+
+# Kilo AI tool files
+.kilo/
+
+# Python version pin
+.python-version
