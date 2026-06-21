@@ -257,6 +257,35 @@ def _parabolic_peak(ac: np.ndarray, i: int) -> float:
     return i + (y0 - y2) / denom
 
 
+def _find_tic_toc_pair(waveform: np.ndarray, period: float) -> tuple[int, int, int] | None:
+    """Find the strongest peak pair near half a period apart."""
+    wf_size = len(waveform)
+    half = int(round(period / 2))
+
+    peaks = []
+    for i in range(1, wf_size - 1):
+        if waveform[i] > waveform[i - 1] and waveform[i] > waveform[i + 1]:
+            peaks.append((i, waveform[i]))
+    if len(peaks) < 2:
+        return None
+
+    peaks.sort(key=lambda x: -x[1])
+    top = peaks[:min(30, len(peaks))]
+
+    best = None
+    best_err = float('inf')
+    for i, (p1, _v1) in enumerate(top):
+        for j, (p2, _v2) in enumerate(top):
+            if i >= j:
+                continue
+            gap = abs(p1 - p2)
+            err = abs(gap - half)
+            if err < best_err and gap > half * 0.5:
+                best_err = err
+                best = (p1, p2, gap)
+    return best
+
+
 def _find_best_peak(ac: np.ndarray, a: int, b: int, expected: float) -> float | None:
     """Find the best peak near `expected` within [a, b).
 
@@ -403,33 +432,14 @@ def detect_beat_error(waveform: np.ndarray, period: float,
     Detect tic/toc and compute beat error from folded waveform.
     Returns {'tic', 'toc', 'be_samples', 'be_ms'} or None.
     """
-    wf_size = len(waveform)
-    half = int(round(period / 2))
     margin = sr // 100
-
-    # Find the two strongest peaks separated by ~period/2
-    peaks = []
-    for i in range(1, wf_size - 1):
-        if waveform[i] > waveform[i-1] and waveform[i] > waveform[i+1]:
-            peaks.append((i, waveform[i]))
-    if len(peaks) < 2:
-        return None
-    peaks.sort(key=lambda x: -x[1])
-    top = peaks[:min(30, len(peaks))]
-
-    # Find best pair near period/2 separation
-    best = None; best_err = float('inf')
-    for i, (p1, v1) in enumerate(top):
-        for j, (p2, v2) in enumerate(top):
-            if i >= j: continue
-            gap = abs(p1 - p2)
-            err = abs(gap - half)
-            if err < best_err and gap > half * 0.5:
-                best_err = err; best = (p1, p2, gap)
-
-    if best is None or best_err > margin:
+    best = _find_tic_toc_pair(waveform, period)
+    if best is None:
         return None
     p1, p2, gap = best
+    if abs(gap - round(period / 2)) > margin:
+        return None
+    half = int(round(period / 2))
     be = half - gap  # beat error in samples
     return {'tic': p1, 'toc': p2, 'be_samples': abs(be),
             'be_ms': abs(be) * 1000 / sr}
@@ -533,6 +543,11 @@ def process_chunk(samples: np.ndarray, sr: int, bph: int = DEFAULT_BPH,
     if be_info:
         amp = compute_amplitude(wf, period, sr,
                                 be_info['tic'], be_info['toc'], la)
+    else:
+        pair = _find_tic_toc_pair(wf, period)
+        if pair is not None:
+            tic, toc, _gap = pair
+            amp = compute_amplitude(wf, period, sr, tic, toc, la)
 
     rate = compute_rate(period, sr, bph)
     guessed_bph = round(7200 / (period / sr))
