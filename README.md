@@ -86,4 +86,4 @@ uv run web_app.py --no-ngrok
 
 ## License
 
-GPL-3.0 (matches original [tg](https://github.com/vacaboja/tg) license)
+GPL-2.0-only  (matches original [tg](https://github.com/vacaboja/tg) license)
