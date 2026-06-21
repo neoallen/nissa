@@ -654,7 +654,8 @@ def analyze_audio(samples: np.ndarray, sr: int, bph: int, la: float,
     mad = float(np.median(np.abs(periods - med_period)))
     avg_rate = float(np.median(clean_rates)) if len(clean_rates) else float(np.median(rates))
     rate_ci_lo, rate_ci_hi = _bootstrap_ci(clean_rates) if len(clean_rates) >= 3 else (None, None)
-    avg_be = float(np.median(clean_bes)) if len(clean_bes) else float(np.median(bes)) if len(bes) else 0
+    avg_be = (float(np.median(clean_bes)) if len(clean_bes)
+              else (float(np.median(bes)) if len(bes) else None))
     avg_amp = (float(np.median(clean_amps)) if len(clean_amps)
                else (float(np.median(amps)) if len(amps) else None))
     bph_meas = round(7200 / (med_period / 1000))
@@ -664,7 +665,8 @@ def analyze_audio(samples: np.ndarray, sr: int, bph: int, la: float,
         chunks_out.append({
             'period_ms': round(r['period_ms'], 1),
             'rate_sd': round(r['rate_sd'], 1),
-            'beat_error_ms': round(r['beat_error_ms'], 1) if r['beat_error_ms'] else None,
+            'beat_error_ms': (round(r['beat_error_ms'], 1)
+                              if r['beat_error_ms'] is not None else None),
             'amplitude_deg': r['amplitude_deg'],
             'accepted': bool(mask[i]),
         })
@@ -688,7 +690,7 @@ def analyze_audio(samples: np.ndarray, sr: int, bph: int, la: float,
                 [round(rate_ci_lo, 1), round(rate_ci_hi, 1)]
                 if rate_ci_lo is not None else None
             ),
-            'beat_error_ms': round(avg_be, 2) if avg_be > 0 else None,
+            'beat_error_ms': round(avg_be, 2) if avg_be is not None else None,
             'amplitude_deg': round(avg_amp, 0) if avg_amp is not None else None,
         },
         'chunks': chunks_out,
@@ -804,7 +806,7 @@ def main():
     else:
         periods_str = ", ".join(f"{r['period_ms']:.1f}" for r in chunks_out)
         rates_str = ", ".join(f"{r['rate_sd']:+.1f}" for r in chunks_out)
-        bes_str = ", ".join(f"{r['beat_error_ms']:.1f}" if r['beat_error_ms'] else "---"
+        bes_str = ", ".join(f"{r['beat_error_ms']:.1f}" if r['beat_error_ms'] is not None else "---"
                             for r in chunks_out)
         print(f"  Chunk periods (ms): {periods_str}")
         print(f"  Chunk rates (s/d):  {rates_str}")
